@@ -3,8 +3,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 import os
 from dotenv import load_dotenv
-from app.models import User, Settings  # Import models directly from app.models
-from app.models.base import Base       # Import Base from models/base.py
+from app.models import User, Settings, TemporaryAsset  # Import models directly
+from app.models.base import Base  # Import Base from models/base.py
 
 # Load environment variables
 load_dotenv()
@@ -56,3 +56,7 @@ def create_default_settings(db: Session):
         settings = Settings(id="default", openmetadata_token=default_token)
         db.add(settings)
         db.commit()
+
+# Create tables if they do not exist
+def init_db():
+    Base.metadata.create_all(bind=engine)
