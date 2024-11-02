@@ -1,8 +1,13 @@
 # app/models/__init__.py
-from app.base import Base
+
+# Import Base from models/base.py to avoid circular imports
+from app.models.base import Base
+
+# Import each model
 from app.models.user import User
 from app.models.asset import Asset
 from app.models.metadata_history import MetadataHistory
-from app.models.claim_request import ClaimRequest  # Import ClaimRequest here
+from app.models.settings import Settings  # Ensure Settings is imported
 
-__all__ = ["Base", "User", "Asset", "MetadataHistory", "ClaimRequest"]
+# Specify all models in __all__ for easier imports elsewhere
+__all__ = ["Base", "User", "Asset", "MetadataHistory", "Settings"]
