@@ -3,6 +3,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database import get_db
+from app.config import settings  # Import settings from config.py
 from app.models import Settings
 import requests
 import logging
@@ -13,28 +14,20 @@ router = APIRouter(
     responses={404: {"description": "Not found"}},
 )
 
-OPENMETADATA_API_URL = "http://localhost:8585/api/v1"
 logger = logging.getLogger(__name__)
 
 # Mapping for asset types in OpenMetadata
 asset_type_map = {
     "searchIndexes": "searchIndexes",
     "tables": "tables",
-    "dashboards": "dashboards",
-    "storedProcedures": "storedProcedures",
-    "docStore": "docStore",
-    "dataProducts": "dataProducts",
-    "mlmodels": "mlmodels",
-    "pipelines": "pipelines",
-    "containers": "containers",
-    "topics": "topics"
+    "dashboards": "dashboards"
 }
 
 def get_openmetadata_token(db: Session):
     """Retrieve OpenMetadata token from the database settings."""
-    settings = db.query(Settings).first()
-    if settings and settings.openmetadata_token:
-        return settings.openmetadata_token
+    settings_entry = db.query(Settings).first()
+    if settings_entry and settings_entry.openmetadata_token:
+        return settings_entry.openmetadata_token
     logger.error("OpenMetadata API token not found in the database.")
     raise HTTPException(status_code=500, detail="OpenMetadata API token is not configured in the database")
 
@@ -51,14 +44,14 @@ def fetch_unowned_assets(db: Session = Depends(get_db)):
 
     try:
         for asset_type, endpoint in asset_type_map.items():
-            url = f"{OPENMETADATA_API_URL}/{endpoint}?fields=owners,fullyQualifiedName,displayName,updatedAt&limit=1000000"
+            url = f"{settings.OPENMETADATA_API_URL}/{endpoint}?fields=owners,fullyQualifiedName,displayName,updatedAt&limit=1000000"
             logger.info(f"Fetching unowned assets of type {asset_type} from {url}")
-            
+
             response = requests.get(url, headers=headers)
             if response.status_code != 200:
                 logger.warning(f"Failed to fetch unowned assets for type {asset_type}: {response.text}")
                 continue
-            
+
             # Collect assets that have no owner
             assets = [
                 {

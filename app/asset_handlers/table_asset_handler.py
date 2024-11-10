@@ -1,5 +1,3 @@
-# app/asset_handlers/table_asset_handler.py
-
 from app.asset_handlers.base_asset_handler import BaseAssetHandler
 from app.utils import (
     get_headers, 
@@ -9,6 +7,7 @@ from app.utils import (
     generate_valid_name,
     get_team_details
 )
+from app.config import settings
 import logging
 import requests
 
@@ -18,12 +17,14 @@ class TableAssetHandler(BaseAssetHandler):
     def __init__(self, db, asset_data, current_user):
         super().__init__(db, asset_data, current_user)
         self.asset_type = "tables"
-        # Log the asset data received to confirm attribute data
-        logger.debug(f"Asset data received in TableAssetHandler: {self.asset_data}")
+        self.OPENMETADATA_API_URL = settings.OPENMETADATA_API_URL
+        self.headers = get_headers(self.db)
+
+        # Log to confirm initialization values
+        logger.debug(f"Initialized TableAssetHandler with API URL: {self.OPENMETADATA_API_URL}")
+        logger.debug(f"Headers: {self.headers}")
 
     def handle(self):
-        """Handles the creation or update of a table asset in OpenMetadata."""
-        headers = get_headers(self.db)
         created_assets = []
         errors = []
 
@@ -32,22 +33,24 @@ class TableAssetHandler(BaseAssetHandler):
         database_name = self.asset_data.get("database_name", "default_database")
         schema_name = self.asset_data.get("schema_name", "default_schema")
 
+        logger.debug(f"Handling asset creation for: service_name={database_service_name}, database_name={database_name}, schema_name={schema_name}")
+
         # Ensure the parent hierarchy is created or retrieved
-        database_service = get_or_create_database_service(database_service_name, headers, self.OPENMETADATA_API_URL)
+        database_service = get_or_create_database_service(database_service_name, self.headers)
         if not database_service or 'error' in database_service:
             error_msg = f"Failed to get or create database service '{database_service_name}'."
             errors.append(error_msg)
             logger.error(error_msg)
             return {"success": False, "errors": errors}
 
-        database = get_or_create_database(database_name, database_service_name, headers, self.OPENMETADATA_API_URL)
+        database = get_or_create_database(database_name, database_service_name, self.headers)
         if not database or 'error' in database:
             error_msg = f"Failed to get or create database '{database_name}'."
             errors.append(error_msg)
             logger.error(error_msg)
             return {"success": False, "errors": errors}
 
-        database_schema = get_or_create_schema(schema_name, database_service_name, database_name, headers, self.OPENMETADATA_API_URL)
+        database_schema = get_or_create_schema(schema_name, database_service_name, database_name, self.headers)
         if not database_schema or 'error' in database_schema:
             error_msg = f"Failed to get or create schema '{schema_name}'."
             errors.append(error_msg)
@@ -73,18 +76,17 @@ class TableAssetHandler(BaseAssetHandler):
 
         # Check if the table already exists
         table_fqn = f"{database_service_name}.{database_name}.{schema_name}.{table_payload['name']}"
-        existing_table = self._check_existing_table(table_fqn, headers)
-        
+        logger.debug(f"Checking if table exists with FQN: {table_fqn}")
+        existing_table = self._check_existing_table(table_fqn)
+
         try:
             if existing_table:
-                # If table exists, use PUT to update it
                 logger.info(f"Table '{self.asset_data['title']}' already exists, updating it with PUT.")
-                response = requests.put(f"{self.OPENMETADATA_API_URL}/tables", json=table_payload, headers=headers)
+                response = requests.put(f"{self.OPENMETADATA_API_URL}/tables", json=table_payload, headers=self.headers)
             else:
-                # If table does not exist, use POST to create it
                 logger.info(f"Table '{self.asset_data['title']}' does not exist, creating it with POST.")
-                response = requests.post(f"{self.OPENMETADATA_API_URL}/tables", json=table_payload, headers=headers)
-            
+                response = requests.post(f"{self.OPENMETADATA_API_URL}/tables", json=table_payload, headers=self.headers)
+
             response.raise_for_status()
             created_assets.append(response.json())
             logger.info(f"Table '{self.asset_data['title']}' processed successfully.")
@@ -104,13 +106,8 @@ class TableAssetHandler(BaseAssetHandler):
         attributes = self.asset_data.get("attributes", [])
         descriptions = self.asset_data.get("att_desc", [])
 
-        # Log the received attributes and descriptions for debugging
-        logger.debug(f"Attributes received: {attributes}")
-        logger.debug(f"Descriptions received: {descriptions}")
-
-        # Pad descriptions to match attributes length, if necessary
-        if len(descriptions) < len(attributes):
-            descriptions.extend([""] * (len(attributes) - len(descriptions)))
+        # Use list comprehension to pad descriptions to match attributes length, if necessary
+        descriptions = [descriptions[i] if i < len(descriptions) else "" for i in range(len(attributes))]
 
         for idx, (attr_name, attr_desc) in enumerate(zip(attributes, descriptions), start=1):
             column_name = generate_valid_name(attr_name)
@@ -141,28 +138,14 @@ class TableAssetHandler(BaseAssetHandler):
 
         return columns
 
-    def _get_owners(self):
-        """Retrieve owner information for the asset."""
-        if self.current_user and self.current_user.team_id:
-            team_details = get_team_details(self.current_user.team_id, self.headers, self.OPENMETADATA_API_URL)
-            if team_details:
-                return [{
-                    "id": team_details["id"],
-                    "type": "team",
-                    "name": team_details["name"]
-                }]
-            else:
-                logger.warning(f"Could not retrieve team details for team ID '{self.current_user.team_id}'.")
-        
-        # Return an empty list if no owner information is available
-        return []
-
-
-
-    def _check_existing_table(self, table_fqn, headers):
+    def _check_existing_table(self, table_fqn):
         """Checks if a table with the specified fully qualified name already exists."""
         try:
-            response = requests.get(f"{self.OPENMETADATA_API_URL}/tables/name/{table_fqn}", headers=headers)
+            response = requests.get(f"{self.OPENMETADATA_API_URL}/tables/name/{table_fqn}", headers=self.headers)
+            logger.debug(f"GET request to check existing table at URL: {self.OPENMETADATA_API_URL}/tables/name/{table_fqn}")
+            logger.debug(f"Response status code: {response.status_code}")
+            logger.debug(f"Response text: {response.text}")
+
             if response.status_code == 200:
                 logger.info(f"Table '{table_fqn}' already exists in OpenMetadata.")
                 return response.json()
@@ -174,7 +157,7 @@ class TableAssetHandler(BaseAssetHandler):
     def _get_owners(self):
         """Retrieve owner information for the asset."""
         if self.current_user and self.current_user.team_id:
-            team_details = get_team_details(self.current_user.team_id, get_headers(self.db), self.OPENMETADATA_API_URL)
+            team_details = get_team_details(self.current_user.team_id, self.headers)
             if team_details:
                 return [{
                     "id": team_details["id"],
@@ -183,6 +166,5 @@ class TableAssetHandler(BaseAssetHandler):
                 }]
             else:
                 logger.warning(f"Could not retrieve team details for team ID '{self.current_user.team_id}'.")
-        
         # Return an empty list if no owner information is available
         return []

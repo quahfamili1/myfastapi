@@ -3,7 +3,7 @@ from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Text
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import bcrypt
-from app.base import Base  # Absolute import for Base
+from app.models.base import Base  # Absolute import for Base
 
 class User(Base):
     __tablename__ = "users"

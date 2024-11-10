@@ -10,7 +10,7 @@ from app.utils import verify_password, create_access_token, get_password_hash
 from datetime import timedelta
 import requests
 import logging
-import os
+from app.config import settings  # Import settings for configuration
 
 router = APIRouter(
     prefix="/users",
@@ -20,21 +20,22 @@ router = APIRouter(
 # Configure logger
 logger = logging.getLogger(__name__)
 
-OPENMETADATA_API_URL = os.getenv("OPENMETADATA_API_URL", "http://localhost:8585/api/v1/teams")
+# Use settings from config.py for OpenMetadata API URL
+OPENMETADATA_API_URL = settings.OPENMETADATA_API_URL
 
 def get_headers(db: Session):
     """Retrieve authorization headers for OpenMetadata API."""
-    settings = db.query(Settings).first()
-    if not settings or not settings.openmetadata_token:
+    settings_entry = db.query(Settings).first()
+    if not settings_entry or not settings_entry.openmetadata_token:
         logger.error("OpenMetadata API token not configured.")
         raise HTTPException(status_code=500, detail="OpenMetadata API token is not configured in the database")
-    return {"Authorization": f"Bearer {settings.openmetadata_token}", "Content-Type": "application/json"}
+    return {"Authorization": f"Bearer {settings_entry.openmetadata_token}", "Content-Type": "application/json"}
 
 def check_team_in_catalog(team_name: str, db: Session) -> str:
     """Check if a team exists in OpenMetadata and return its ID if it does."""
     headers = get_headers(db)
     try:
-        response = requests.get(f"{OPENMETADATA_API_URL}/name/{team_name}", headers=headers)
+        response = requests.get(f"{OPENMETADATA_API_URL}/teams/name/{team_name}", headers=headers)
         if response.status_code == 200:
             return response.json().get("id")  # Return the team ID if it exists
     except requests.RequestException as e:
@@ -45,7 +46,7 @@ def create_team_in_catalog(team_name: str, db: Session) -> str:
     """Create a team in OpenMetadata and return the team ID."""
     headers = get_headers(db)
     payload = {"name": team_name, "displayName": team_name}
-    response = requests.post(OPENMETADATA_API_URL, json=payload, headers=headers)
+    response = requests.post(f"{OPENMETADATA_API_URL}/teams", json=payload, headers=headers)
     if response.status_code == 201:
         return response.json().get("id")  # Return the new team ID if creation is successful
     else:

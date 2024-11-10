@@ -6,20 +6,24 @@ from app.database import get_db
 from app.models import Asset, Settings  # Ensure Settings is imported
 import requests
 import logging
+from app.config import settings  # Import settings for configuration
 
 router = APIRouter(
-    prefix="/teams",
-    tags=["teams"]
+    prefix="/team-assets",
+    tags=["team-assets"]
 )
 
-OPENMETADATA_API_URL = "http://localhost:8585/api/v1"
+# Configure logger
 logger = logging.getLogger(__name__)
+
+# Use settings from config.py for OpenMetadata API URL
+OPENMETADATA_API_URL = settings.OPENMETADATA_API_URL
 
 def get_headers(db: Session):
     """Retrieve the OpenMetadata API token from the database."""
-    settings = db.query(Settings).first()
-    if settings and settings.openmetadata_token:
-        return {"Authorization": f"Bearer {settings.openmetadata_token}", "Content-Type": "application/json"}
+    settings_entry = db.query(Settings).first()
+    if settings_entry and settings_entry.openmetadata_token:
+        return {"Authorization": f"Bearer {settings_entry.openmetadata_token}", "Content-Type": "application/json"}
     raise HTTPException(status_code=500, detail="OpenMetadata API token is not configured")
 
 @router.get("/{team_name}")

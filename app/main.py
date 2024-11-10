@@ -4,13 +4,14 @@ import os
 import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
 from app.database import engine, SessionLocal, create_default_user, create_default_settings
 from app import models
-from contextlib import asynccontextmanager
+from app.config import settings
 
 # Configure logging for the entire application
 logging.basicConfig(
-    level=logging.DEBUG,  # Set to DEBUG to capture all log messages
+    level=settings.LOG_LEVEL,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     stream=sys.stdout
 )
@@ -18,9 +19,9 @@ logger = logging.getLogger(__name__)
 
 # Configure uvicorn’s logger explicitly
 uvicorn_access_logger = logging.getLogger("uvicorn.access")
-uvicorn_access_logger.setLevel(logging.DEBUG)
+uvicorn_access_logger.setLevel(settings.LOG_LEVEL)
 uvicorn_error_logger = logging.getLogger("uvicorn.error")
-uvicorn_error_logger.setLevel(logging.DEBUG)
+uvicorn_error_logger.setLevel(settings.LOG_LEVEL)
 
 # Add the project root path to sys.path explicitly
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -35,31 +36,37 @@ models.Base.metadata.drop_all(bind=engine)
 logger.info("Creating database tables.")
 models.Base.metadata.create_all(bind=engine)
 
-# Initialize FastAPI app
-app = FastAPI()
+# Initialize FastAPI app with debug setting from config
+app = FastAPI(debug=settings.DEBUG)
 
-# Allow CORS from any origin for development (configure carefully in production)
+# CORS Configuration
+cors_origins = (
+    settings.CORS_ORIGINS.split(",") if isinstance(settings.CORS_ORIGINS, str) else settings.CORS_ORIGINS
+)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # Update for production-specific domains
+    allow_origins=cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],  # Allow all methods (GET, POST, etc.)
-    allow_headers=["*"],  # Allow all headers
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Import and include routers with a versioned prefix
+# Import and include routers with a versioned prefix
 from app.routers import team_assets, users, assets, metadata, unowned_assets, temporary_assets
+from app.routers.metadata_routes import router as metadata_router  # Corrected import path
+
 app.include_router(users.router, prefix="/api/v1")
 app.include_router(assets.router, prefix="/api/v1")
 app.include_router(metadata.router, prefix="/api/v1")
 app.include_router(team_assets.router, prefix="/api/v1")
 app.include_router(unowned_assets.router, prefix="/api/v1")
 app.include_router(temporary_assets.router, prefix="/api/v1")
+app.include_router(metadata_router, prefix="/api/v1")  # Add the new metadata router
 
 # Define a lifespan event handler to manage app startup and shutdown
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Code to run at startup
     logger.info("Application startup - initializing default user and settings.")
     db = SessionLocal()
     try:
@@ -73,7 +80,7 @@ async def lifespan(app: FastAPI):
     finally:
         db.close()
 
-    yield  # Control passes here during the app's lifecycle
+    yield  # Pass control to the app lifecycle here
 
     # Code to run at shutdown
     logger.info("Application shutdown.")
@@ -88,6 +95,6 @@ if __name__ == "__main__":
         "app.main:app",
         host="127.0.0.1",
         port=8005,
-        log_level="debug",
-        reload=True
+        log_level=settings.LOG_LEVEL.lower(),
+        reload=settings.DEBUG
     )

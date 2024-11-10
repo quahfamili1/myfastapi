@@ -1,15 +1,15 @@
 # app/routers/assets.py
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Body, Path
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from app.database import get_db
 from app.models import User
-from app.utils import get_current_user
-from app.utils import get_headers
+from app.utils import get_current_user, get_headers
 from app.asset_handlers import asset_handler_registry
+from app.config import settings
 import logging
 import requests
 
@@ -19,7 +19,6 @@ router = APIRouter(
     responses={404: {"description": "Not found"}},
 )
 
-OPENMETADATA_API_URL = "http://localhost:8585/api/v1"  # Adjust as necessary
 logger = logging.getLogger(__name__)
 
 class AssetUpdateModel(BaseModel):
@@ -120,7 +119,7 @@ def get_asset_by_id(type: str, asset_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Unsupported asset type")
 
     headers = get_headers(db)
-    url = f"{OPENMETADATA_API_URL}/{type}/{asset_id}"
+    url = f"{settings.OPENMETADATA_API_URL}/{type}/{asset_id}"
 
     try:
         response = requests.get(url, headers=headers)
@@ -171,7 +170,6 @@ def delete_asset(
     else:
         raise HTTPException(status_code=500, detail=result['errors'])
 
-# ClaimAsset Endpoint
 @router.post("/{type}/{asset_id}/claim", summary="Claim ownership of an asset", description="Allow a logged-in user to claim ownership of an asset.")
 def claim_asset_ownership(
     type: str,
